@@ -47,11 +47,12 @@ start_mnesia_magaz(Nodes) ->
 	Mnesia_scheme = mnesia:create_schema(Nodes),
 	
 	LeastNodes = lists:delete(node(),Nodes),
+	io:format("LeastNodes: ~p~n", [LeastNodes]),
+	%Mnesia_added_nodes = mnesia:change_config(extra_db_nodes, LeastNodes),
+	Mnesia_start = rpc:multicall(Nodes, application, start, [mnesia]),
+%	Mnesia_start = mnesia:start(),
 	
-	Mnesia_added_nodes = mnesia:change_config(extra_db_nodes, LeastNodes),
-	Mnesia_start = mnesia:start(),
-
-	
+%	io:format("Mnesia_added_nodes: ~p~n", [Mnesia_added_nodes]),
 	io:format("Mnesia_scheme, Mnesia_start: ~p~n", [{Mnesia_scheme, Mnesia_start}]),
 	
 	mnesia:delete_table(magazine),
