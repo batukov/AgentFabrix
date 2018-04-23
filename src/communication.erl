@@ -7,10 +7,7 @@ send_msg(Destination, Sender, Msg, Type) ->
 		_ -> ok
 	end,	
 	Destination ! {Sender, Msg, Type}.
+%	Socket = ets:lookup(system_table, socket),
+%	SpamPort = ets:lookup(system_table, port_spam),
+%	gen_udp:send(Socket, {127,0,0,1}, SpamPort, {Destination, Sender, Msg}).
 %	io:format("~p~n", [{ Sender, Destination, Msg, Type}]),
-%	{Pid, Node} = Destination,
-%	FinalNode = atom_to_list(Node),
-%	io:format("FinalNode: ~p~n", [FinalNode]),
-%	FionalDestination = {Pid, FinalNode},
-
-%	FionalDestination ! {Sender, Msg, Type}.

@@ -28,7 +28,7 @@
 start(_StartType, _StartArgs) ->
     server_sup:start_link(),
 %    application:ensure_all_started(mnesia, permanent),
-	server(20070).
+	server(20070, 20071).
 
 %%--------------------------------------------------------------------
 stop(_State) ->
@@ -38,7 +38,7 @@ stop(_State) ->
 %% Internal functions
 %%====================================================================
 
-server(Port) ->
+server(Port, PortSpam) ->
 	io:format("hey there !!!~n"),
 	HostsPool = net_adm:host_file(),
 	Names = net_adm:names(),
@@ -80,7 +80,14 @@ server(Port) ->
 	MnesiaPid = database_run(Hosts),
 	AgentsTable = ets:new(agents_table, [named_table, set, private, {keypos, 1}]),
 %	AgentStatsTable = ets:new(agents_stats_table, [named_table, set, public, {keypos, 1}]),
-	ClientsTable = ets:new(clients_table, [named_table, set, private, {keypos, 1}]), 					% creating databse
+	ClientsTable = ets:new(clients_table, [named_table, set, private, {keypos, 1}]),
+	SystemTable = ets:new(system_table, [named_table, set, public, {keypos, 1}]),
+	ets:insert(system_table, 	[{socket, Socket},
+					{port_client, Port},
+					{port_spam, PortSpam},
+					{cro_pid, CroPid},
+					{db_pid, MnesiaPid},
+					{hosts, Hosts}]),
 	loop(Socket, CroPid, MnesiaPid, Hosts)
   end.
 %
@@ -136,10 +143,7 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
 spawn_agents(Value, Croupier, Mnesia, Type, Hosts) ->
 	NumberOfAgents = get_number_of_agents_of_type(Type),
 	Sasl = rpc:multicall(Hosts, application, start, [sasl]),
-%	io:format("Sasl: ~p~n", [Sasl]),
 	OS_Mon = rpc:multicall(Hosts, application, start, [os_mon]),
-%	io:format("Sasl: ~p~n", [OS_Mon]),
-
 	zerg_processes(NumberOfAgents, NumberOfAgents+Value, Croupier, Mnesia, Type, Hosts).
 %
 get_node_with_lowest_load([], Acc) -> Acc;
@@ -163,10 +167,8 @@ get_lowest_load_of_nodes([Head|Tail], {MinName, MinVal}) ->
 %
 find_suitable_node(Hosts) ->
 	ResultVal = get_node_with_lowest_load(Hosts, []),
-%	io:format("Sasl: ~p~n", [ResultVal]),
 	ThisNodeLoad = rpc:call(node(), cpu_sup, avg1, []),
 	Lowest = get_lowest_load_of_nodes(ResultVal, { node(),ThisNodeLoad}).
-%	io:format("Lowest: ~p~n", [Lowest]),
 %
 zerg_processes(Number, NeededNumber, Croupier, Mnesia, Type, Hosts) ->
 	case Number of
