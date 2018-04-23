@@ -26,8 +26,6 @@
 %%====================================================================
 
 start(_StartType, _StartArgs) ->
-
-	
     server_sup:start_link(),
 %    application:ensure_all_started(mnesia, permanent),
 	server(20070).
@@ -94,10 +92,12 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
     											[] -> ets:insert(clients_table, {Socket, SenderAddress, SenderPort});
     											[_] -> ok
     										end,
-											case string:tokens(Bin, " ") of
-												["spawn", Value, Type]  -> case string:to_integer(Value) of
+    										[Head|Tail] = string:tokens(Bin, " "),
+											case [Head] of
+												["spawn"]  ->   [Value, Type] = Tail, case string:to_integer(Value) of
 																{error,no_integer} -> send_answer(Socket, SenderAddress, SenderPort, "not interger value");
-																{Val, _} -> spawn_agents(Val, Croupier, Mnesia, list_to_atom(Type), Hosts), send_answer(Socket, SenderAddress, SenderPort, "threads_created")
+																{Val, _} -> spawn_agents(Val, Croupier, Mnesia, list_to_atom(Type), Hosts),
+																			 send_answer(Socket, SenderAddress, SenderPort, "threads_created")
 												  				end;
 											  	["start"]  	->  ListOfThreads = get_agents_list(),	
 															  	io:format("ListOfThreads: ~p~n", [ListOfThreads]),
@@ -117,7 +117,7 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
 												["killem_all"] ->ListOfThreads = get_agents_list(),	
 															   send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("~p stopped",[ListOfThreads]))),
 															   	ask_agents(die, ListOfThreads);
-												["kill", Value] -> ExistingThreads = registered(),
+												["kill"] -> 	[Value] = Tail, ExistingThreads = registered(),
 																case [Thread || Thread <- ExistingThreads, Thread =:= list_to_atom(Value)] of
 																	[] -> 	send_answer(Socket, SenderAddress, SenderPort,"no such process");
 																	[_] ->	exit(list_to_pid(Value), kill),
@@ -154,7 +154,8 @@ get_node_load(Node) ->
 %
 get_lowest_load_of_nodes([_], {MinName, _}) -> MinName;
 get_lowest_load_of_nodes([Head|Tail], {MinName, MinVal}) ->
-	{Name, Load}= Head,
+	{Name, Load} = Head,
+	io:format("Name: ~p~n", [Name]),
 	case (MinVal - Load) < 0 of
 		true	-> 	get_lowest_load_of_nodes(Tail, {Name, Load});
 		false	-> 	get_lowest_load_of_nodes(Tail, {MinName, MinVal})
@@ -163,7 +164,8 @@ get_lowest_load_of_nodes([Head|Tail], {MinName, MinVal}) ->
 find_suitable_node(Hosts) ->
 	ResultVal = get_node_with_lowest_load(Hosts, []),
 %	io:format("Sasl: ~p~n", [ResultVal]),
-	Lowest = get_lowest_load_of_nodes(ResultVal, { default,0}).
+	ThisNodeLoad = rpc:call(node(), cpu_sup, avg1, []),
+	Lowest = get_lowest_load_of_nodes(ResultVal, { node(),ThisNodeLoad}).
 %	io:format("Lowest: ~p~n", [Lowest]),
 %
 zerg_processes(Number, NeededNumber, Croupier, Mnesia, Type, Hosts) ->
