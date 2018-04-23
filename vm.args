@@ -1,0 +1,5 @@
+% Name of the node
+-sname alpha
+
+% Cookie for distributed erlang
+-setcookie fabrix
