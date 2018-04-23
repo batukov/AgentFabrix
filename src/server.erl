@@ -135,22 +135,46 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PROCESS GENERATOR
 spawn_agents(Value, Croupier, Mnesia, Type, Hosts) ->
 	NumberOfAgents = get_number_of_agents_of_type(Type),
+	Sasl = rpc:multicall(Hosts, application, start, [sasl]),
+%	io:format("Sasl: ~p~n", [Sasl]),
+	OS_Mon = rpc:multicall(Hosts, application, start, [os_mon]),
+%	io:format("Sasl: ~p~n", [OS_Mon]),
+
 	zerg_processes(NumberOfAgents, NumberOfAgents+Value, Croupier, Mnesia, Type, Hosts).
 %
-
+get_node_with_lowest_load([], Acc) -> Acc;
+get_node_with_lowest_load([Head|Tail], Acc) ->
+	ThisNode = get_node_load(Head),
+	NewAcc = [ThisNode|Acc],
+	get_node_with_lowest_load(Tail, NewAcc).
+%
+get_node_load(Node) ->
+	Load = rpc:call(Node, cpu_sup, avg1, []),
+	{Node, Load}.
+%
+get_lowest_load_of_nodes([_], {MinName, _}) -> MinName;
+get_lowest_load_of_nodes([Head|Tail], {MinName, MinVal}) ->
+	{Name, Load}= Head,
+	case (MinVal - Load) < 0 of
+		true	-> 	get_lowest_load_of_nodes(Tail, {Name, Load});
+		false	-> 	get_lowest_load_of_nodes(Tail, {MinName, MinVal})
+	end.
+%
+find_suitable_node(Hosts) ->
+	ResultVal = get_node_with_lowest_load(Hosts, []),
+%	io:format("Sasl: ~p~n", [ResultVal]),
+	Lowest = get_lowest_load_of_nodes(ResultVal, { default,0}).
+%	io:format("Lowest: ~p~n", [Lowest]),
+%
 zerg_processes(Number, NeededNumber, Croupier, Mnesia, Type, Hosts) ->
 	case Number of
 		NeededNumber -> {ok};
 		_ -> 	Owner = self(),
-				[Head | Tail] = Hosts,
-				Fun = fun() -> agent_start(Owner, Croupier, Mnesia, Type) end,
-%				Pid = spawn_link(Head, Fun),
-				Pid = spawn_link(Head, agent, agent_start, [Owner, Croupier, Mnesia, Type]),
-%				Pid = pool:pspawn_link(agent, Fun, []),
-%				Pid = spawn_link(fun() -> agent_process(Owner, Croupier, Mnesia, Type) end),
+%				[Head | Tail] = Hosts,
+				NodeToSpawn = find_suitable_node(Hosts),
+				Pid = spawn_link(NodeToSpawn, agent, agent_start, [Owner, Croupier, Mnesia, Type]),
 				agents_states_write(Pid, 0, Type, fine),
 				global:register_name(list_to_atom(pid_to_list(Pid)), Pid),
-				%register(list_to_atom(pid_to_list(Pid)), Pid),
 				NumberOfAgents = get_number_of_agents_of_type(Type),
 				zerg_processes(NumberOfAgents, NeededNumber, Croupier, Mnesia, Type, Hosts)
 	end.
