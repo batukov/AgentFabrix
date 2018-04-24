@@ -13,7 +13,7 @@ erl_crash.dump
 .rebar
 logs
 _build
-Mnesia
+Mnesia.*/
 .idea
 *.iml
 rebar3.crashdump
