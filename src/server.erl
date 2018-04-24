@@ -93,38 +93,75 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
     											[_] -> ok
     										end,
     										[Head|Tail] = string:tokens(Bin, " "),
-											case [Head] of
-												["spawn"]  ->   [Value, Type] = Tail, case string:to_integer(Value) of
+											case Head of
+											
+											
+											
+												"spawn"  ->   [Value, Type] = Tail, case string:to_integer(Value) of
 																{error,no_integer} -> send_answer(Socket, SenderAddress, SenderPort, "not interger value");
 																{Val, _} -> spawn_agents(Val, Croupier, Mnesia, list_to_atom(Type), Hosts),
 																			 send_answer(Socket, SenderAddress, SenderPort, "threads_created")
 												  				end;
-											  	["start"]  	->  ListOfThreads = get_agents_list(),	
+											  	"start"  	->  ListOfThreads = get_agents_list(),	
 															  	io:format("ListOfThreads: ~p~n", [ListOfThreads]),
 																send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("~p started",[ListOfThreads]))),
 															   	ask_agents(start, ListOfThreads);
-											   	["show_agents"]->  ListOfThreads = get_agents_list(),	
+											   	"show_agents"->  ListOfThreads = get_agents_list(),	
 %																send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("~p started",[ListOfThreads]))),
 															   	ask_agents(state, ListOfThreads);
-												["stop"]  	->  ListOfThreads = get_agents_list(),	
+												"stop"  	->  ListOfThreads = get_agents_list(),	
 															   send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("~p stopped",[ListOfThreads]))),
 															   	ask_agents(stop, ListOfThreads);
-												["show_all"] 	-> {_, ListOfThreads} = process_info(self(), links),
+												"show_all" 	-> {_, ListOfThreads} = process_info(self(), links),
 															   SortedList = lists:sort(ListOfThreads),
 															   send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format(" all the processes~p",[SortedList])));
-											   	["stats"] ->  	Stats = get_types_stats(),
+											   	"stats" ->  	Stats = get_types_stats(),
 																send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("s: ~p",[Stats])));
-												["killem_all"] ->ListOfThreads = get_agents_list(),	
+												"killem_all" ->ListOfThreads = get_agents_list(),	
 															   send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("~p stopped",[ListOfThreads]))),
 															   	ask_agents(die, ListOfThreads);
-												["kill"] -> 	[Value] = Tail, ExistingThreads = registered(),
+												"kill" -> 	[Value] = Tail, ExistingThreads = registered(),
 																case [Thread || Thread <- ExistingThreads, Thread =:= list_to_atom(Value)] of
 																	[] -> 	send_answer(Socket, SenderAddress, SenderPort,"no such process");
 																	[_] ->	exit(list_to_pid(Value), kill),
 															 			send_answer(Socket, SenderAddress, SenderPort, "process is down")
 																end;
-												[]	 	-> send_answer(Socket, SenderAddress, SenderPort, "try to type something");
-												[_]	 	-> send_answer(Socket, SenderAddress, SenderPort, "unknown message")
+																
+																
+																
+												"sys" ->	[SysWord| Cmd] = Tail,
+																case SysWord of
+																	"nodes" ->  [CmdWordNodes|CmdWordNodesValue]= Cmd,
+																				case CmdWordNodes of
+																					"add" 	-> sys_nodes_add();
+																					"show"	-> sys_nodes_show();
+																					_ 		-> send_answer(Socket, SenderAddress, SenderPort, "unknown command word")
+																				end;
+																	"hosts"	->	[CmdWordHosts|CmdWordHostsValue]= Cmd,
+																				case CmdWordHosts of
+																					"add"	-> sys_hosts_add();
+																					"show"	-> sys_hosts_show();
+																					_ 		-> send_answer(Socket, SenderAddress, SenderPort, "unknown command word")
+																				end;
+																	"dbase"	->	[CmdWordDbase|_]= Cmd,
+																				case CmdWordDbase of
+																					"save"	-> sys_dbase_save();
+																					_ 		-> send_answer(Socket, SenderAddress, SenderPort, "unknown command word")
+																				end;
+																	"msg"	->	[CmdWordMsg|CmdWordMsgValue]= Cmd,
+																				case CmdWordMsg of
+																					"do_spam"	-> sys_msg_do_spam();
+																					"stop_spam"	-> sys_msg_stop_spam();
+																					_ 		-> send_answer(Socket, SenderAddress, SenderPort, "unknown command word")
+																				end;
+																	_		-> send_answer(Socket, SenderAddress, SenderPort, "unknown system word")
+																end;
+												
+												
+												
+												
+												
+												_	 	-> send_answer(Socket, SenderAddress, SenderPort, "unknown message")
 											end;
 												
     {Address, Msg, _} 		-> send_to_all_clients(lists:flatten(io_lib:format("thread ~p has ~p~n", [Address, Msg])));
@@ -132,6 +169,28 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
     
   end,
   loop(Socket, Croupier,Mnesia, Hosts).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SYSTEM WORDS STUFF
+sys_nodes_add() ->
+	ok.
+%
+sys_nodes_show() ->
+	ok.
+%
+sys_hosts_add() ->
+	ok.
+%
+sys_hosts_show() ->
+	ok.
+%
+sys_dbase_save() ->
+	ok.
+%
+sys_msg_do_spam() ->
+	ok.
+%
+sys_msg_stop_spam() ->
+	ok.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PROCESS GENERATOR
 spawn_agents(Value, Croupier, Mnesia, Type, Hosts) ->
 	NumberOfAgents = get_number_of_agents_of_type(Type),
