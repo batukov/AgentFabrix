@@ -1,7 +1,8 @@
 -module(mnesia_stuff).
 -export([database_run/1, agents_increase_deals/1, agents_state_dead/1,
  		agents_states_write/4, get_types_stats/0, get_agents_list/0, 
- 		get_number_of_agents_of_type/1, add_absent_nodes_to_mnesia_cluster_from_list/1]).
+ 		get_number_of_agents_of_type/1, add_absent_nodes_to_mnesia_cluster_from_list/1,
+ 		save_tables_on_server_disk/1]).
 -import(communication, [send_msg/4]).
 
 %% IMPORTANT: The next line must be included
@@ -81,6 +82,9 @@ add_table_copies_to_nodes([]) -> done;
 add_table_copies_to_nodes([Head|Tail]) ->
 	[mnesia:add_table_copy(Table, Head, ram_copies) || Table <- mnesia:system_info(tables), Table =/= schema],
 	add_table_copies_to_nodes(Tail).
+%
+save_tables_on_server_disk(NodeToSave) ->
+	[mnesia:add_table_copy(Table, NodeToSave, disc_copies) || Table <- mnesia:system_info(tables), Table =/= schema].
 %
 request(Gambler) ->
 	case do(qlc:q([Advertisment#magazine.gambler || Advertisment <- mnesia:table(magazine)])) of
