@@ -40,34 +40,34 @@ stop(_State) ->
 
 server(Port, PortSpam) ->
 	io:format("hey there !!!~n"),
-	HostsPool = net_adm:host_file(),
-	Names = net_adm:names(),
-	Hosts = net_adm:world(verbose),
-	io:format("world: ~p~n", [Hosts]),
-	io:format("Names: ~p~n", [Names]),
-	io:format("Pool: ~p~n", [HostsPool]),
+	HostNames = net_adm:host_file(),
+	NodeNames = net_adm:names(),
+	Nodes = net_adm:world(verbose),
+	io:format("world: ~p~n", [Nodes]),
+	io:format("Names: ~p~n", [NodeNames]),
+	io:format("Pool: ~p~n", [HostNames]),
 	
 	Path = filename:dirname(code:which(?MODULE)),
 	code:add_path(Path),
 	
 	{ModS, BinS, FileS} = code:get_object_code(server),
-	{_RepliesS, BadNodesS} = rpc:multicall(Hosts, code, load_binary, [ModS, FileS, BinS]),
+	{_RepliesS, BadNodesS} = rpc:multicall(Nodes, code, load_binary, [ModS, FileS, BinS]),
 	io:format("Replies: ~p~n", [{_RepliesS, BadNodesS}]),
 	
 	{ModA, BinA, FileA} = code:get_object_code(agent),
-	{_RepliesA, BadNodesA} = rpc:multicall(Hosts, code, load_binary, [ModA, FileA, BinA]),
+	{_RepliesA, BadNodesA} = rpc:multicall(Nodes, code, load_binary, [ModA, FileA, BinA]),
 	io:format("Replies: ~p~n", [{_RepliesA, BadNodesA}]),
 	
 	{ModT, BinT, FileT} = code:get_object_code(trades_mech),
-	{_RepliesT, BadNodesT} = rpc:multicall(Hosts, code, load_binary, [ModT, FileT, BinT]),
+	{_RepliesT, BadNodesT} = rpc:multicall(Nodes, code, load_binary, [ModT, FileT, BinT]),
 	io:format("Replies: ~p~n", [{_RepliesT, BadNodesT}]),
 	
 	{ModM, BinM, FileM} = code:get_object_code(mnesia_stuff),
-	{_RepliesM, BadNodesM} = rpc:multicall(Hosts, code, load_binary, [ModM, FileM, BinM]),
+	{_RepliesM, BadNodesM} = rpc:multicall(Nodes, code, load_binary, [ModM, FileM, BinM]),
 	io:format("Replies: ~p~n", [{_RepliesM, BadNodesM}]),
 	
 	{ModC, BinC, FileC} = code:get_object_code(communication),
-	{_RepliesC, BadNodesC} = rpc:multicall(Hosts, code, load_binary, [ModC, FileC, BinC]),
+	{_RepliesC, BadNodesC} = rpc:multicall(Nodes, code, load_binary, [ModC, FileC, BinC]),
 	io:format("Replies: ~p~n", [{_RepliesC, BadNodesC}]),
   
   case gen_udp:open(Port, [list, {active, false}]) of 
@@ -77,7 +77,7 @@ server(Port, PortSpam) ->
 	io:format("server pid is ~p~n", [self()]),
 	process_flag(trap_exit, true),
 	CroPid = croupier(),
-	MnesiaPid = database_run(Hosts),
+	MnesiaPid = database_run(Nodes),
 	AgentsTable = ets:new(agents_table, [named_table, set, private, {keypos, 1}]),
 %	AgentStatsTable = ets:new(agents_stats_table, [named_table, set, public, {keypos, 1}]),
 	ClientsTable = ets:new(clients_table, [named_table, set, private, {keypos, 1}]),
@@ -87,11 +87,11 @@ server(Port, PortSpam) ->
 					{port_spam, PortSpam},
 					{cro_pid, CroPid},
 					{db_pid, MnesiaPid},
-					{hosts, Hosts}]),
-	loop(Socket, CroPid, MnesiaPid, Hosts)
+					{round_nodes, Nodes}]),
+	loop(Socket, CroPid, MnesiaPid)
   end.
 %
-loop(Socket, Croupier, Mnesia, Hosts) ->
+loop(Socket, Croupier, Mnesia) ->
   inet:setopts(Socket, [{active, once}]),
   receive
     {udp, Socket, SenderAddress, SenderPort, Bin} -> io:format("server received:~p ~n",[Bin]), 	
@@ -106,7 +106,7 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
 											
 												"spawn"  ->   [Value, Type] = Tail, case string:to_integer(Value) of
 																{error,no_integer} -> send_answer(Socket, SenderAddress, SenderPort, "not interger value");
-																{Val, _} -> spawn_agents(Val, Croupier, Mnesia, list_to_atom(Type), Hosts),
+																{Val, _} -> spawn_agents(Val, Croupier, Mnesia, list_to_atom(Type)),
 																			 send_answer(Socket, SenderAddress, SenderPort, "threads_created")
 												  				end;
 											  	"start"  	->  ListOfThreads = get_agents_list(),	
@@ -140,14 +140,18 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
 																case SysWord of
 																	"nodes" ->  [CmdWordNodes|CmdWordNodesValue]= Cmd,
 																				case CmdWordNodes of
-																					"add" 	-> sys_nodes_add();
-																					"show"	-> sys_nodes_show();
+																					"add" 	-> case string:to_integer(CmdWordNodesValue) of
+																								{error,no_integer} -> send_answer(Socket, SenderAddress, SenderPort, "not interger value");
+																								{CmdWordNodesVal, _} -> sys_nodes_add(CmdWordNodesVal, Socket, SenderAddress, SenderPort)
+																				  				end;
+																								
+																					"show"	-> sys_nodes_show(Socket, SenderAddress, SenderPort);
 																					_ 		-> send_answer(Socket, SenderAddress, SenderPort, "unknown command word")
 																				end;
 																	"hosts"	->	[CmdWordHosts|CmdWordHostsValue]= Cmd,
 																				case CmdWordHosts of
 																					"add"	-> sys_hosts_add();
-																					"show"	-> sys_hosts_show();
+																					"show"	-> sys_hosts_show(Socket, SenderAddress, SenderPort);
 																					_ 		-> send_answer(Socket, SenderAddress, SenderPort, "unknown command word")
 																				end;
 																	"dbase"	->	[CmdWordDbase|_]= Cmd,
@@ -175,18 +179,56 @@ loop(Socket, Croupier, Mnesia, Hosts) ->
    	{_} 					-> send_to_all_clients("unknown message")
     
   end,
-  loop(Socket, Croupier,Mnesia, Hosts).
+  loop(Socket, Croupier,Mnesia).
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SYSTEM WORDS STUFF
-sys_nodes_add() ->
+find_elem(List, Elem) ->
+	Result = [X|| X <- List, X =:= Elem],
+	case Result of
+		[_] -> found;
+		[]	-> not_found
+	end.
+%
+sys_nodes_add(Value, Socket, SenderAddress, SenderPort) ->
+	UsedNodesList = ets:lookup(system_table, round_nodes),
+	case ets:info(nodes_available) of
+		undefined -> send_answer(Socket, SenderAddress, SenderPort, "u should chk for nodes first");
+		_ -> 	D = ets:lookup(nodes_available, Value),
+				case D of
+					[{_, AskedNode}] -> [{ _, NodesList}] =	ets:lookup(system_table, round_nodes),
+										case find_elem(NodesList, AskedNode) of
+											found 		-> send_answer(Socket, SenderAddress, SenderPort, "cant add node, exists already and able to use");
+											not_found 	-> NewNodesList = [AskedNode|NodesList], 
+															ets:insert(system_table, {round_nodes, NewNodesList}), 
+															send_answer(Socket, SenderAddress, SenderPort, "node added")
+										end, ets:delete(nodes_available);
+					[_]				->	send_answer(Socket, SenderAddress, SenderPort, "unpredicted behaviour");
+					[]				->	send_answer(Socket, SenderAddress, SenderPort, "wrong value, sry mon")
+				end
+	end,
 	ok.
 %
-sys_nodes_show() ->
+sys_nodes_show(Socket, SenderAddress, SenderPort) ->
+	NodesAvailable = net_adm:world(verbose),
+	ListLength = lists:seq(1, length(NodesAvailable)),
+	NodesTuplesList = lists:zip(ListLength,NodesAvailable),
+%	io:format("NodesTuplesList: ~p~n", [NodesTuplesList]),
+	case ets:info(nodes_available) of
+		undefined	-> fine;
+		_ ->	ets:delete(nodes_available)
+	end,
+	ets:new(nodes_available, [named_table, set, public, {keypos, 1}]),
+	ets:insert(nodes_available, NodesTuplesList),
+	[{ _, NodesList}] =	ets:lookup(system_table, round_nodes),
+	send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("Available nodes are: ~p",[NodesTuplesList]))),
+	send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("Used nodes are: ~p",[NodesList]))),
 	ok.
 %
 sys_hosts_add() ->
 	ok.
 %
-sys_hosts_show() ->
+sys_hosts_show(Socket, SenderAddress, SenderPort) ->
+	HostsPool = net_adm:host_file(),
+	send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("Available hosts: ~p",[HostsPool]))),
 	ok.
 %
 sys_dbase_save() ->
@@ -199,11 +241,12 @@ sys_msg_stop_spam() ->
 	ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PROCESS GENERATOR
-spawn_agents(Value, Croupier, Mnesia, Type, Hosts) ->
+spawn_agents(Value, Croupier, Mnesia, Type) ->
 	NumberOfAgents = get_number_of_agents_of_type(Type),
-	Sasl = rpc:multicall(Hosts, application, start, [sasl]),
-	OS_Mon = rpc:multicall(Hosts, application, start, [os_mon]),
-	zerg_processes(NumberOfAgents, NumberOfAgents+Value, Croupier, Mnesia, Type, Hosts).
+	NodesList =	ets:lookup(system_table, round_nodes),
+	Sasl = rpc:multicall(NodesList, application, start, [sasl]),
+	OS_Mon = rpc:multicall(NodesList, application, start, [os_mon]),
+	zerg_processes(NumberOfAgents, NumberOfAgents+Value, Croupier, Mnesia, Type, NodesList).
 %
 get_node_with_lowest_load([], Acc) -> Acc;
 get_node_with_lowest_load([Head|Tail], Acc) ->
@@ -229,17 +272,17 @@ find_suitable_node(Hosts) ->
 	ThisNodeLoad = rpc:call(node(), cpu_sup, avg1, []),
 	Lowest = get_lowest_load_of_nodes(ResultVal, { node(),ThisNodeLoad}).
 %
-zerg_processes(Number, NeededNumber, Croupier, Mnesia, Type, Hosts) ->
+zerg_processes(Number, NeededNumber, Croupier, Mnesia, Type, NodesList) ->
 	case Number of
 		NeededNumber -> {ok};
 		_ -> 	Owner = self(),
 %				[Head | Tail] = Hosts,
-				NodeToSpawn = find_suitable_node(Hosts),
+				NodeToSpawn = find_suitable_node(NodesList),
 				Pid = spawn_link(NodeToSpawn, agent, agent_start, [Owner, Croupier, Mnesia, Type]),
 				agents_states_write(Pid, 0, Type, fine),
 				global:register_name(list_to_atom(pid_to_list(Pid)), Pid),
 				NumberOfAgents = get_number_of_agents_of_type(Type),
-				zerg_processes(NumberOfAgents, NeededNumber, Croupier, Mnesia, Type, Hosts)
+				zerg_processes(NumberOfAgents, NeededNumber, Croupier, Mnesia, Type, NodesList)
 	end.
 %
 ask_agents(_,[])-> io:format("agents asked~n");
