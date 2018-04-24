@@ -150,7 +150,8 @@ loop(Socket, Croupier, Mnesia) ->
 																				end;
 																	"hosts"	->	[CmdWordHosts|CmdWordHostsValue]= Cmd,
 																				case CmdWordHosts of
-																					"add"	-> sys_hosts_add();
+																					"del"	-> sys_hosts_del();
+																					"add"	-> sys_hosts_add(CmdWordHostsValue, Socket, SenderAddress, SenderPort);
 																					"show"	-> sys_hosts_show(Socket, SenderAddress, SenderPort);
 																					_ 		-> send_answer(Socket, SenderAddress, SenderPort, "unknown command word")
 																				end;
@@ -211,7 +212,6 @@ sys_nodes_show(Socket, SenderAddress, SenderPort) ->
 	NodesAvailable = net_adm:world(verbose),
 	ListLength = lists:seq(1, length(NodesAvailable)),
 	NodesTuplesList = lists:zip(ListLength,NodesAvailable),
-%	io:format("NodesTuplesList: ~p~n", [NodesTuplesList]),
 	case ets:info(nodes_available) of
 		undefined	-> fine;
 		_ ->	ets:delete(nodes_available)
@@ -223,12 +223,48 @@ sys_nodes_show(Socket, SenderAddress, SenderPort) ->
 	send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("Used nodes are: ~p",[NodesList]))),
 	ok.
 %
-sys_hosts_add() ->
+get_file_text(Name, Buffer)->
+	case io:get_line(Name, '') of
+		eof -> Buffer;
+		String	-> NewBuffer = [String|Buffer], get_file_text(Name, NewBuffer)
+	end.
+%
+set_file_text(Name, [])-> ok;
+set_file_text(Name, [Head|Tail])->
+	io:format(Name, "\~s\~n", [Head]),
+	set_file_text(Name, Tail).
+
+%
+sys_hosts_add(Hostname, Socket, SenderAddress, SenderPort) ->
+	{OpenedR, FileR} = file:open(".hosts.erlang", read),
+	case OpenedR of
+		error	-> send_answer(Socket, SenderAddress, SenderPort, "failed to open .hosts.erlang file to read, smthing goes wrong");
+		ok		-> 	OldText = get_file_text(FileR, []),
+					file:close(FileR),
+					NewHostName = "'" ++ Hostname ++ "'.",
+					NewText = [NewHostName|OldText],
+					{OpenedW, FileW} = file:open(".hosts.erlang", write),
+					case OpenedW of
+						error	-> send_answer(Socket, SenderAddress, SenderPort, "failed to open .hosts.erlang file to write, smthing goes wrong");
+						ok		-> set_file_text(FileW, NewText), file:close(FileW)
+					end
+	end,
+	ok.
+%
+sys_hosts_del() ->
 	ok.
 %
 sys_hosts_show(Socket, SenderAddress, SenderPort) ->
 	HostsPool = net_adm:host_file(),
-	send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("Available hosts: ~p",[HostsPool]))),
+	ListLength = lists:seq(1, length(HostsPool)),
+	HostsTuplesList = lists:zip(ListLength, HostsPool),
+	case ets:info(hosts_mentioned) of
+		undefined	-> fine;
+		_ ->	ets:delete(hosts_mentioned)
+	end,
+	ets:new(hosts_mentioned, [named_table, set, public, {keypos, 1}]),
+	ets:insert(hosts_mentioned, HostsTuplesList),
+	send_answer(Socket, SenderAddress, SenderPort, lists:flatten(io_lib:format("Available hosts: ~p",[HostsTuplesList]))),
 	ok.
 %
 sys_dbase_save() ->
