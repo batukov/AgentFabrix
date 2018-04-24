@@ -11,7 +11,7 @@
 -export([start/2, stop/1]).
 -import(trades_mech,[croupier/0]).
 -import(agent,[agent_start/4]).
--import(mnesia_stuff,[database_run/1, get_types_stats/0, get_agents_list/0, get_number_of_agents_of_type/1, agents_states_write/4]).
+-import(mnesia_stuff,[database_run/1, get_types_stats/0, get_agents_list/0, get_number_of_agents_of_type/1, agents_states_write/4, add_absent_nodes_to_mnesia_cluster_from_list/1]).
 -import(communication, [send_msg/4]).
 %-import(agents_state_database, [ ).
 
@@ -200,6 +200,11 @@ sys_nodes_add(Value, Socket, SenderAddress, SenderPort) ->
 											found 		-> send_answer(Socket, SenderAddress, SenderPort, "cant add node, exists already and able to use");
 											not_found 	-> NewNodesList = [AskedNode|NodesList], 
 															ets:insert(system_table, {round_nodes, NewNodesList}), 
+															BeforeNodes = mnesia:system_info(db_nodes),
+															io:format("BeforeNodes: ~p~n", [BeforeNodes]),
+															add_absent_nodes_to_mnesia_cluster_from_list(NewNodesList),
+															AfterNodes = mnesia:system_info(db_nodes),
+															io:format("BeforeNodes: ~p~n", [AfterNodes]),
 															send_answer(Socket, SenderAddress, SenderPort, "node added")
 										end, ets:delete(nodes_available);
 					[_]				->	send_answer(Socket, SenderAddress, SenderPort, "unpredicted behaviour");

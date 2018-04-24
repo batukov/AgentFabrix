@@ -1,5 +1,7 @@
 -module(mnesia_stuff).
--export([database_run/1, agents_increase_deals/1, agents_state_dead/1, agents_states_write/4, get_types_stats/0, get_agents_list/0, get_number_of_agents_of_type/1]).
+-export([database_run/1, agents_increase_deals/1, agents_state_dead/1,
+ 		agents_states_write/4, get_types_stats/0, get_agents_list/0, 
+ 		get_number_of_agents_of_type/1, add_absent_nodes_to_mnesia_cluster_from_list/1]).
 -import(communication, [send_msg/4]).
 
 %% IMPORTANT: The next line must be included
@@ -48,11 +50,7 @@ start_mnesia_magaz(Nodes) ->
 	
 	LeastNodes = lists:delete(node(),Nodes),
 	io:format("LeastNodes: ~p~n", [LeastNodes]),
-	%Mnesia_added_nodes = mnesia:change_config(extra_db_nodes, LeastNodes),
 	Mnesia_start = rpc:multicall(Nodes, application, start, [mnesia]),
-%	Mnesia_start = mnesia:start(),
-	
-%	io:format("Mnesia_added_nodes: ~p~n", [Mnesia_added_nodes]),
 	io:format("Mnesia_scheme, Mnesia_start: ~p~n", [{Mnesia_scheme, Mnesia_start}]),
 	
 	mnesia:delete_table(magazine),
@@ -60,6 +58,29 @@ start_mnesia_magaz(Nodes) ->
 	mnesia:delete_table(agents_states),
 	mnesia:create_table(agents_states, [{ram_copies, Nodes}, {attributes, record_info(fields, agents_states)}]),
 	mnesia:wait_for_tables([magazine, agents_states], 5000), mnesia:info().
+%
+add_absent_nodes_to_mnesia_cluster_from_list(WantedNodesList) ->
+	CurrentNodesList = mnesia:system_info(db_nodes),
+	NodesToAddList = delete_entries(WantedNodesList, CurrentNodesList),
+	add_nodes_from_list_to_mnesia_cluster(NodesToAddList).
+%
+delete_entries([], _) -> [];
+delete_entries(ResultList, _) -> ResultList;
+delete_entries(WantedNodesList, [Head|Tail]) ->
+	NewWantedNodesList = lists:delete(Head, WantedNodesList),
+	delete_entries(NewWantedNodesList, Tail).
+%
+add_nodes_from_list_to_mnesia_cluster(NodesToAddList) ->
+	mnesia:delete_schema(NodesToAddList),
+	mnesia:create_schema(NodesToAddList),
+	rpc:multicall(NodesToAddList, application, start, [mnesia]),
+	mnesia:change_config(extra_db_nodes, NodesToAddList),
+	add_table_copies_to_nodes(NodesToAddList).
+%
+add_table_copies_to_nodes([]) -> done;
+add_table_copies_to_nodes([Head|Tail]) ->
+	[mnesia:add_table_copy(Table, Head, ram_copies) || Table <- mnesia:system_info(tables), Table =/= schema],
+	add_table_copies_to_nodes(Tail).
 %
 request(Gambler) ->
 	case do(qlc:q([Advertisment#magazine.gambler || Advertisment <- mnesia:table(magazine)])) of
